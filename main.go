@@ -1,54 +1,73 @@
 package main
 
 import (
-	"bytes"
-	"github.com/PuerkitoBio/goquery"
-	"io/ioutil"
+	"fetchturck/parse"
+	"fmt"
+	"github.com/gocolly/colly/v2"
 	"log"
-	"net/http"
+	"log/slog"
 )
 
 func main() {
-	client := http.DefaultClient
 
-	req, err := http.NewRequest("GET", "https://www.turck.us/en", nil)
-	if err != nil {
-		log.Fatalf("error sending HTTP request: %v", err)
-	}
-	// ...
-	//req.Header.Add("If-None-Match", `W/"wyzzy"`)
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Fatalf("error sending HTTP request: %v", err)
-	}
-	responseBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatalf("error reading HTTP response body: %v", err)
-	}
+	c := colly.NewCollector()
 
-	doc, err := goquery.NewDocumentFromReader(bytes.NewBufferString(string(responseBytes)))
-	if err != nil {
-		log.Fatal(err)
-	}
+	c.OnHTML("a[href]", func(e *colly.HTMLElement) {
+		link := e.Attr("href")
+		if link == "" {
+			return
+		}
+		//slog.Info("LINK FOUND", slog.String("url", link))
 
-	var links []string
-
-	doc.Find("ul.navLevel2p li a").Each(func(i int, s *goquery.Selection) {
-		cat, _ := s.Attr("title")
-		s.Next().Find("ul.navLevel3p li a").Each(func(i int, s *goquery.Selection) {
-			subcat, _ := s.Attr("title")
-			//if emty cat or subcat, continue
-			if cat == "" || cat == "Downloads" || subcat == "" {
-				return
-			}
-			//link := cat + "/" + subcat
-			link := "https://www.turck.us/en/productgroup/" + cat + "/" + subcat + "/pws?iwp[]=pwsPager-O-10000&test=test"
-
-			links = append(links, link)
-		})
 	})
 
-	for _, link := range links {
-		log.Println(link)
+	c.OnRequest(func(r *colly.Request) {
+		fmt.Println("Visiting: ", r.URL)
+	})
+
+	c.OnError(func(_ *colly.Response, err error) {
+		log.Println("Something went wrong: ", err)
+	})
+
+	c.OnResponse(func(r *colly.Response) {
+		//fmt.Println("Page visited: ", r.Request.URL)
+		slog.Info("LINK VISITED", slog.String("url", r.Request.URL.String()))
+
+		err := parse.OnPage(r)
+		if err != nil {
+			fmt.Println("OnResponse failed", err.Error())
+			return
+		}
+	})
+
+	// downloading the target HTML page
+	//c.Visit("https://www.hoodoo.digital/blog/how-to-make-a-web-crawler-using-go-and-colly-tutorial")
+
+	//urls, err := parse.GetUrls()
+	//if err != nil {
+	//	fmt.Println(err)
+	//}
+
+	// Add URLs to the queue
+	//for _, url := range urls {
+	//	q.AddURL(url)
+	//}
+
+	if parse.LoadableURLs(c) {
+		fmt.Println("URLs loaded")
 	}
+
+	// Consume URLs
+	//q.Run(c)
+
+	//u, err := store.ParseURLs()
+	//if err != nil {
+	//	fmt.Println(err)
+	//}
+	//for _, url := range u {
+	//	fmt.Println(url)
+	//}
+
+	//os.Stdout.Write(output)
+
 }
